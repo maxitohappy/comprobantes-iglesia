@@ -70,6 +70,8 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   try {
     switch (p.accion) {
+      // Al abrir la app: estado y últimos comprobantes en una sola llamada.
+      case 'inicio': return json_({ok: true, datos: {estado: estado_(), ultimas: ultimas_(10)}});
       case 'ping': return json_({ok: true, datos: estado_()});
       case 'ultimas': return json_({ok: true, datos: ultimas_(10)});
       default: return json_({ok: false, error: 'acción desconocida: ' + p.accion});
@@ -153,6 +155,29 @@ function migrarRegistros_(hoja) {
   hoja.hideColumns(C.id + 1, 2);
 }
 
+/**
+ * Camino rápido para lecturas: si la planilla ya existe y está al día, usa los IDs guardados sin abrir Drive
+ * ni tomar el bloqueo (destino_ tarda varios segundos). Si falta algo, recurre a destino_ para crearlo.
+ */
+function ids_() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('SHEET_ID') || !props.getProperty('CARPETA_ID') ||
+      props.getProperty('VERSION_PLANILLA') !== VERSION_PLANILLA) {
+    destino_();
+  }
+  return {planilla: props.getProperty('SHEET_ID'), carpeta: props.getProperty('CARPETA_ID')};
+}
+
+function hojaRegistros_() {
+  try {
+    const hoja = SpreadsheetApp.openById(ids_().planilla).getSheetByName(HOJA_REGISTROS);
+    if (hoja) return hoja;
+  } catch (err) {
+    /* la planilla se borró: destino_ la vuelve a crear */
+  }
+  return destino_().hoja;
+}
+
 function porId_(id, abrir) {
   if (!id) return null;
   try {
@@ -164,22 +189,20 @@ function porId_(id, abrir) {
 }
 
 function estado_() {
-  const d = destino_();
+  const ids = ids_();
   return {
-    carpeta_url: d.carpeta.getUrl(),
-    planilla_url: d.libro.getUrl(),
+    carpeta_url: 'https://drive.google.com/drive/folders/' + ids.carpeta,
+    planilla_url: 'https://docs.google.com/spreadsheets/d/' + ids.planilla + '/edit',
     ia: !!prop_('ANTHROPIC_API_KEY'),
     uso_hoy: usoHoy_(),
     limite_diario: limite_(),
     categorias: CATEGORIAS,
-    // Control rápido de que las fórmulas del Balance calculan (debe ser un monto, no #ERROR!).
-    balance_saldo: d.libro.getSheetByName(HOJA_BALANCE).getRange('B7').getDisplayValue(),
   };
 }
 
 /** Los últimos n comprobantes según la fecha en que se registraron (la hoja está ordenada por fecha del comprobante). */
 function ultimas_(n) {
-  const hoja = destino_().hoja;
+  const hoja = hojaRegistros_();
   if (hoja.getLastRow() < 2) return [];
   const filas = hoja.getRange(2, 1, hoja.getLastRow() - 1, COLUMNAS.length).getValues()
     .filter(f => f[C.id])

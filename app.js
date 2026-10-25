@@ -167,17 +167,33 @@ async function guardar(ev) {
 
 let ultimas = [];
 
+// Copia local de lo último que respondió el backend, para mostrar la tabla al instante al abrir la app.
+const CACHE = 'comprobantes-inicio';
+
+function leerCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE)); } catch (e) { return null; }
+}
+
+function guardarCache(datos) {
+  try { localStorage.setItem(CACHE, JSON.stringify(datos)); } catch (e) { /* sin almacenamiento: solo se pierde la carga instantánea */ }
+}
+
+function pintarUltimas(filas) {
+  ultimas = filas || [];
+  $('ultimas').innerHTML = ultimas.length ? ultimas.map(b => `<tr>
+      <td>${escapar(b.fecha)}</td>
+      <td><span class="mov ${b.movimiento === 'Ingreso' ? 'ingreso' : 'egreso'}">${escapar(b.movimiento)}</span></td>
+      <td class="texto" title="${escapar(b.tipo)}">${escapar(b.tipo)}</td><td>${escapar(b.subtipo)}</td>
+      <td class="num">${pesos(b.monto)}</td>
+      <td>${b.link ? `<a href="${escapar(b.link)}" target="_blank" rel="noopener">Ver</a>` : ''}</td>
+      <td><button class="eliminar" data-id="${escapar(b.id)}" title="Eliminar comprobante" aria-label="Eliminar comprobante">🗑</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="vacio">Sin datos aún</td></tr>';
+}
+
 async function cargarUltimas() {
   try {
-    ultimas = await llamar('ultimas');
-    $('ultimas').innerHTML = ultimas.length ? ultimas.map(b => `<tr>
-        <td>${escapar(b.fecha)}</td>
-        <td><span class="mov ${b.movimiento === 'Ingreso' ? 'ingreso' : 'egreso'}">${escapar(b.movimiento)}</span></td>
-        <td class="texto" title="${escapar(b.tipo)}">${escapar(b.tipo)}</td><td>${escapar(b.subtipo)}</td>
-        <td class="num">${pesos(b.monto)}</td>
-        <td>${b.link ? `<a href="${escapar(b.link)}" target="_blank" rel="noopener">Ver</a>` : ''}</td>
-        <td><button class="eliminar" data-id="${escapar(b.id)}" title="Eliminar comprobante" aria-label="Eliminar comprobante">🗑</button></td></tr>`).join('')
-      : '<tr><td colspan="7" class="vacio">Sin datos aún</td></tr>';
+    pintarUltimas(await llamar('ultimas'));
+    guardarCache({...leerCache(), ultimas});
   } catch (e) {
     /* la tabla es secundaria; el estado ya informa si el backend falla */
   }
@@ -199,16 +215,24 @@ async function eliminar(boton) {
   }
 }
 
+function aplicarEstado(e) {
+  categorias = e.categorias || {};
+  for (const [id, url] of [['link-planilla', e.planilla_url], ['link-carpeta', e.carpeta_url]]) {
+    $(id).href = url;
+    $(id).hidden = false;
+  }
+}
+
 async function iniciar() {
+  const previo = leerCache();
+  if (previo?.estado) aplicarEstado(previo.estado);
+  if (previo?.ultimas) pintarUltimas(previo.ultimas);
   try {
-    const e = await llamar('ping');
-    categorias = e.categorias || {};
-    if (!e.ia) avisoEstado('⚠️ Backend sin clave de Anthropic configurada.');
-    for (const [id, url] of [['link-planilla', e.planilla_url], ['link-carpeta', e.carpeta_url]]) {
-      $(id).href = url;
-      $(id).hidden = false;
-    }
-    cargarUltimas();
+    const d = await llamar('inicio');
+    aplicarEstado(d.estado);
+    if (!d.estado.ia) avisoEstado('⚠️ Backend sin clave de Anthropic configurada.');
+    pintarUltimas(d.ultimas);
+    guardarCache(d);
   } catch (err) {
     avisoEstado('⚠️ No se pudo conectar con el backend: ' + err.message);
   }
