@@ -1,0 +1,5 @@
+backend/.clasp.json
+.clasprc.json
+*.local
+pruebas_locales/
+Logo Iglesia.jpg
