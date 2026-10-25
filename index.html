@@ -41,6 +41,7 @@
     <section class="tarjeta" id="paso-revisar" hidden>
       <h2>2. Revisa y corrige</h2>
       <ul id="advertencias" class="advertencias"></ul>
+      <p id="glosa" class="glosa" hidden></p>
       <form id="formulario">
         <label>Movimiento
           <select name="movimiento" required>
@@ -48,22 +49,13 @@
           </select>
         </label>
         <label>Fecha del comprobante <input name="fecha" type="date" required></label>
-        <label class="ancho">Concepto (glosa) <textarea name="concepto" rows="2" required></textarea></label>
         <label>Tipo
           <select name="tipo" required><option value="">— Elegir —</option></select>
         </label>
         <label>Subtipo
           <select name="subtipo" required><option value="">— Elegir —</option></select>
         </label>
-        <label>N° comprobante <input name="numero"></label>
-        <label>Tipo documento
-          <select name="tipo_doc">
-            <option>Comprobante</option><option>Boleta</option><option>Factura</option><option>Boleta de honorarios</option><option>Otro</option>
-          </select>
-        </label>
-        <label>Neto <input name="neto" inputmode="numeric"></label>
-        <label>IVA <input name="iva" inputmode="numeric"></label>
-        <label class="destacado">Monto total <input name="total" inputmode="numeric" required></label>
+        <label class="destacado">Monto <input name="monto" inputmode="numeric" required></label>
         <div class="acciones">
           <button type="button" id="cancelar" class="boton">Descartar</button>
           <button type="submit" id="guardar" class="boton primario">💾 Guardar en Drive</button>
@@ -79,7 +71,7 @@
         <a id="link-carpeta" target="_blank" rel="noopener" hidden>Abrir carpeta en Drive</a></p>
       <div class="tabla-envoltura">
         <table>
-          <thead><tr><th>Fecha</th><th>Mov.</th><th>Concepto</th><th>Subtipo</th><th class="num">Total</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Mov.</th><th>Tipo</th><th>Subtipo</th><th class="num">Monto</th><th></th><th></th></tr></thead>
           <tbody id="ultimas"><tr><td colspan="7" class="vacio">Sin datos aún</td></tr></tbody>
         </table>
       </div>

@@ -89,6 +89,10 @@ form select:invalid { border-color: var(--alerta-texto); background: var(--alert
 form .destacado input { font-weight: 600; font-size: 1.1rem; }
 .acciones { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .advertencias { margin: 0 0 12px; padding: 0; list-style: none; }
+.glosa {
+  margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--oro);
+  background: var(--fondo); border-radius: 4px; font-size: .95rem;
+}
 .advertencias li {
   background: var(--alerta-fondo); color: var(--alerta-texto);
   padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; font-size: .9rem;

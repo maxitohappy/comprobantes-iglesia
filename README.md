@@ -3,10 +3,12 @@
 Aplicación web para la tesorería de la iglesia:
 
 1. Subes un comprobante de ingreso o egreso (JPG, PNG o PDF) o le tomas una foto con el celular.
-2. Claude (API de Anthropic, modelo `claude-haiku-5-5`) lee el título (ingreso o egreso), la **fecha**, el **N°**, el
-   **concepto (glosa)** y los montos, y propone el **tipo** y **subtipo** según el catálogo de la iglesia.
-3. Revisas y corriges. Si la glosa no indica el tipo, los selectores quedan vacíos y debes elegirlos antes de guardar.
-4. Al guardar, se agrega una fila a la pestaña **Registros** de la planilla **Comprobantes** (ordenada siempre por la
+2. Claude (API de Anthropic, modelo `claude-haiku-5-5`) lee el título (ingreso o egreso), la **fecha** y el **monto**,
+   y según la glosa propone el **tipo** y **subtipo** del catálogo de la iglesia.
+3. Revisas y corriges. Si la glosa no indica el tipo, los selectores quedan vacíos y debes elegirlos antes de guardar
+   (la glosa leída se muestra como ayuda, pero no se guarda).
+4. Al guardar, se agrega una fila (Fecha registro, Fecha comprobante, Movimiento, Tipo, Subtipo, Monto, Link archivo,
+   Notas) a la pestaña **Registros** de la planilla **Comprobantes** (ordenada siempre por la
    fecha del comprobante) y una copia del archivo en la carpeta **Tesorería IPUNJ - Comprobantes/Archivos** de Google Drive.
 5. En "Últimos comprobantes guardados" puedes eliminar un comprobante: se borra de la planilla y el archivo va a la papelera.
 

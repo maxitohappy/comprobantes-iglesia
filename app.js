@@ -123,12 +123,10 @@ function llenarFormulario(d) {
   actualizarTipos(d.tipo);
   actualizarSubtipos(d.subtipo);
   f.fecha.value = /^\d{4}-\d{2}-\d{2}$/.test(d.fecha) ? d.fecha : '';
-  f.concepto.value = d.concepto || '';
-  f.numero.value = d.numero_comprobante || '';
-  f.tipo_doc.value = d.tipo_documento || 'Comprobante';
-  f.neto.value = d.neto ?? '';
-  f.iva.value = d.iva ?? '';
-  f.total.value = d.total ?? '';
+  f.monto.value = d.monto ?? '';
+  // La glosa no se guarda; se muestra como ayuda para elegir el tipo y subtipo.
+  $('glosa').innerHTML = d.concepto ? `<b>Glosa leída:</b> ${escapar(d.concepto)}` : '';
+  $('glosa').hidden = !d.concepto;
   $('advertencias').innerHTML = (d.advertencias || []).map(a => `<li>⚠️ ${escapar(a)}</li>`).join('');
   $('paso-revisar').hidden = false;
   $('paso-revisar').scrollIntoView({behavior: 'smooth'});
@@ -138,6 +136,7 @@ function limpiar() {
   actual = null;
   $('formulario').reset();
   actualizarTipos();
+  $('glosa').hidden = true;
   $('paso-revisar').hidden = true;
   $('vista').hidden = true;
   $('vista').innerHTML = '';
@@ -155,7 +154,7 @@ async function guardar(ev) {
   try {
     const r = await llamar('guardar', {campos, tipo: actual?.tipo, datos: actual?.datos, advertencias: actual?.advertencias});
     mensaje(`✅ Comprobante de ${escapar(campos.movimiento.toLowerCase())} <b>${escapar(campos.subtipo)}</b> por ` +
-      `<b>${pesos(campos.total)}</b> guardado. <a href="${escapar(r.planilla_url)}" target="_blank" rel="noopener">Ver planilla</a>`, 'ok');
+      `<b>${pesos(campos.monto)}</b> guardado. <a href="${escapar(r.planilla_url)}" target="_blank" rel="noopener">Ver planilla</a>`, 'ok');
     limpiar();
     cargarUltimas();
   } catch (e) {
@@ -174,8 +173,8 @@ async function cargarUltimas() {
     $('ultimas').innerHTML = ultimas.length ? ultimas.map(b => `<tr>
         <td>${escapar(b.fecha)}</td>
         <td><span class="mov ${b.movimiento === 'Ingreso' ? 'ingreso' : 'egreso'}">${escapar(b.movimiento)}</span></td>
-        <td class="texto" title="${escapar(b.concepto)}">${escapar(b.concepto)}</td><td>${escapar(b.subtipo)}</td>
-        <td class="num">${pesos(b.total)}</td>
+        <td class="texto" title="${escapar(b.tipo)}">${escapar(b.tipo)}</td><td>${escapar(b.subtipo)}</td>
+        <td class="num">${pesos(b.monto)}</td>
         <td>${b.link ? `<a href="${escapar(b.link)}" target="_blank" rel="noopener">Ver</a>` : ''}</td>
         <td><button class="eliminar" data-id="${escapar(b.id)}" title="Eliminar comprobante" aria-label="Eliminar comprobante">🗑</button></td></tr>`).join('')
       : '<tr><td colspan="7" class="vacio">Sin datos aún</td></tr>';
@@ -187,12 +186,12 @@ async function cargarUltimas() {
 async function eliminar(boton) {
   const b = ultimas.find(x => x.id === boton.dataset.id);
   if (!b) return;
-  if (!confirm(`¿Eliminar el comprobante de ${b.movimiento.toLowerCase()} del ${b.fecha} "${b.concepto}" por ${pesos(b.total)}?\n\n` +
+  if (!confirm(`¿Eliminar el comprobante de ${b.movimiento.toLowerCase()} del ${b.fecha} "${b.subtipo}" por ${pesos(b.monto)}?\n\n` +
     'Se borrará de la planilla y el archivo irá a la papelera de Drive.')) return;
   boton.disabled = true;
   try {
     await llamar('eliminar', {id: b.id});
-    mensaje(`🗑 Comprobante "${escapar(b.concepto)}" eliminado.`, 'ok');
+    mensaje(`🗑 Comprobante "${escapar(b.subtipo)}" del ${escapar(b.fecha)} eliminado.`, 'ok');
     cargarUltimas();
   } catch (e) {
     boton.disabled = false;

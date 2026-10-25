@@ -18,11 +18,14 @@ const NOMBRE_CARPETA = 'Tesorería IPUNJ - Comprobantes';
 const NOMBRE_PLANILLA = 'Comprobantes';
 const HOJA_REGISTROS = 'Registros';
 const HOJA_BALANCE = 'Balance';
-const COLUMNAS = ['Fecha registro', 'Fecha comprobante', 'Movimiento', 'N° comprobante', 'Concepto', 'Tipo', 'Subtipo',
-  'Tipo documento', 'Neto', 'IVA', 'Total', 'Link archivo', 'Advertencias', 'ID', 'ID archivo'];
+const COLUMNAS = ['Fecha registro', 'Fecha comprobante', 'Movimiento', 'Tipo', 'Subtipo', 'Monto', 'Link archivo', 'Notas',
+  'ID', 'ID archivo'];
 // Posiciones (base 0) de las columnas que se usan en el código.
-const C = {registro: 0, fecha: 1, movimiento: 2, numero: 3, concepto: 4, tipo: 5, subtipo: 6, tipoDoc: 7,
-  neto: 8, iva: 9, total: 10, link: 11, advertencias: 12, id: 13, idArchivo: 14};
+const C = {registro: 0, fecha: 1, movimiento: 2, tipo: 3, subtipo: 4, monto: 5, link: 6, notas: 7, id: 8, idArchivo: 9};
+// Sube este número cuando cambien las columnas o la pestaña Balance: la planilla se migra sola en la siguiente llamada.
+const VERSION_PLANILLA = '2';
+// Encabezados antiguos que cambiaron de nombre (para migrar datos ya guardados).
+const RENOMBRES = {'Total': 'Monto', 'Advertencias': 'Notas'};
 const MODELO_POR_DEFECTO = 'claude-haiku-5-5';
 const LIMITE_POR_DEFECTO = 100;
 const TIPOS_PERMITIDOS = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -114,23 +117,40 @@ function destino_() {
       DriveApp.getFileById(libro.getId()).moveTo(carpeta);
       // Montos con punto de miles y fechas chilenas.
       libro.setSpreadsheetLocale('es_CL');
-      const hoja = libro.getSheets()[0];
-      hoja.setName(HOJA_REGISTROS);
-      hoja.appendRow(COLUMNAS);
-      hoja.setFrozenRows(1);
-      hoja.getRange(1, 1, 1, COLUMNAS.length).setFontWeight('bold').setBackground('#dbe7f6');
-      hoja.getRange('A:A').setNumberFormat('dd-mm-yyyy hh:mm');
-      hoja.getRange('B:B').setNumberFormat('dd-mm-yyyy');
-      hoja.getRange('I:K').setNumberFormat('$#,##0');
-      hoja.getRange(1, 1, 1, COLUMNAS.length).setNumberFormat('@');
-      hoja.hideColumns(C.id + 1, 2);
+      libro.getSheets()[0].setName(HOJA_REGISTROS);
       props.setProperty('SHEET_ID', libro.getId());
+      props.deleteProperty('VERSION_PLANILLA');
+    }
+    if (props.getProperty('VERSION_PLANILLA') !== VERSION_PLANILLA) {
+      migrarRegistros_(libro.getSheetByName(HOJA_REGISTROS));
       crearBalance_(libro);
+      props.setProperty('VERSION_PLANILLA', VERSION_PLANILLA);
     }
     return {carpeta: carpeta, archivos: archivos, libro: libro, hoja: libro.getSheetByName(HOJA_REGISTROS)};
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Deja la pestaña Registros con las columnas actuales, conservando los datos por nombre de encabezado. */
+function migrarRegistros_(hoja) {
+  let filas = [];
+  if (hoja.getLastRow() > 1) {
+    const encab = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0].map(h => RENOMBRES[h] || h);
+    const pos = COLUMNAS.map(c => encab.indexOf(c));
+    filas = hoja.getRange(2, 1, hoja.getLastRow() - 1, encab.length).getValues()
+      .map(f => pos.map(i => i < 0 ? '' : f[i]));
+  }
+  hoja.clear();
+  hoja.showColumns(1, hoja.getMaxColumns());
+  hoja.getRange(1, 1, 1, COLUMNAS.length).setValues([COLUMNAS]).setNumberFormat('@')
+    .setFontWeight('bold').setBackground('#dbe7f6');
+  hoja.setFrozenRows(1);
+  hoja.getRange('A2:A').setNumberFormat('dd-mm-yyyy hh:mm');
+  hoja.getRange('B2:B').setNumberFormat('dd-mm-yyyy');
+  hoja.getRange('F2:F').setNumberFormat('$#,##0');
+  if (filas.length) hoja.getRange(2, 1, filas.length, COLUMNAS.length).setValues(filas);
+  hoja.hideColumns(C.id + 1, 2);
 }
 
 function porId_(id, abrir) {
@@ -152,6 +172,8 @@ function estado_() {
     uso_hoy: usoHoy_(),
     limite_diario: limite_(),
     categorias: CATEGORIAS,
+    // Control rápido de que las fórmulas del Balance calculan (debe ser un monto, no #ERROR!).
+    balance_saldo: d.libro.getSheetByName(HOJA_BALANCE).getRange('B7').getDisplayValue(),
   };
 }
 
@@ -166,8 +188,7 @@ function ultimas_(n) {
   return filas.map(f => ({
     id: f[C.id],
     fecha: f[C.fecha] instanceof Date ? Utilities.formatDate(f[C.fecha], 'America/Santiago', 'dd-MM-yyyy') : String(f[C.fecha]),
-    movimiento: f[C.movimiento], numero: String(f[C.numero]), concepto: f[C.concepto],
-    tipo: f[C.tipo], subtipo: f[C.subtipo], total: f[C.total], link: f[C.link],
+    movimiento: f[C.movimiento], tipo: f[C.tipo], subtipo: f[C.subtipo], monto: f[C.monto], link: f[C.link],
   }));
 }
 
@@ -241,25 +262,20 @@ const ESQUEMA = {
     movimiento: {type: 'string', enum: ['Ingreso', 'Egreso', ''],
       description: 'Según el título del documento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" → Egreso.'},
     fecha: {type: 'string', description: 'Fecha del comprobante en formato AAAA-MM-DD, o vacío si no se ve.'},
-    numero_comprobante: {type: 'string', description: 'Número o folio del comprobante, o vacío.'},
     concepto: {type: 'string', description: 'Glosa o concepto del comprobante, tal como aparece escrito.'},
     tipo: {type: 'string', enum: todosLosTipos_().concat([''])},
     subtipo: {type: 'string', enum: todosLosSubtipos_().concat([''])},
-    tipo_documento: {type: 'string', enum: ['Comprobante', 'Boleta', 'Factura', 'Boleta de honorarios', 'Otro']},
-    neto: {type: ['number', 'null']},
-    iva: {type: ['number', 'null']},
-    total: {type: ['number', 'null']},
+    monto: {type: ['number', 'null']},
     observaciones: {type: 'string', description: 'Dudas de lectura (texto borroso, cifras dudosas), o vacío.'},
   },
-  required: ['es_comprobante', 'movimiento', 'fecha', 'numero_comprobante', 'concepto', 'tipo', 'subtipo',
-    'tipo_documento', 'neto', 'iva', 'total', 'observaciones'],
+  required: ['es_comprobante', 'movimiento', 'fecha', 'concepto', 'tipo', 'subtipo', 'monto', 'observaciones'],
   additionalProperties: false,
 };
 
 const INSTRUCCIONES = 'Extrae los datos de este comprobante de ingreso o egreso de la tesorería de una iglesia evangélica chilena. ' +
   'El título del documento indica si es "Comprobante de ingreso" o "Comprobante de egreso". ' +
   'Los montos están en pesos chilenos: el punto separa miles, así que "$12.990" es 12990. ' +
-  'Entrega montos como números enteros sin símbolos. Si no se desglosa neto e IVA, deja neto e iva en null. ' +
+  'Entrega el monto total como número entero sin símbolos. ' +
   'Clasifica el tipo y subtipo según la glosa o concepto, usando este catálogo:\n' + catalogoTexto_() + '\n' +
   'El tipo debe ser del mismo movimiento (Ingreso N° para ingresos, Egreso N° para egresos) y el subtipo debe pertenecer a ese tipo. ' +
   'Asigna tipo y subtipo SOLO si la glosa lo indica de forma clara (por ejemplo "diezmos", "pago de arriendo"); ' +
@@ -329,10 +345,7 @@ function advertencias_(d) {
   if (!d.movimiento) a.push('No se pudo saber si es ingreso o egreso: indícalo manualmente.');
   if (!d.tipo || !d.subtipo) a.push('La glosa no especifica el tipo de ' + (d.movimiento || 'movimiento').toLowerCase() + ': indícalo manualmente.');
   if (!d.fecha) a.push('No se leyó la fecha.');
-  if (!d.total) a.push('No se leyó el monto total.');
-  if (d.neto && d.iva && d.total && Math.abs(d.neto + d.iva - d.total) > 2) {
-    a.push('Neto + IVA (' + (d.neto + d.iva) + ') no cuadra con el total (' + d.total + ').');
-  }
+  if (!d.monto) a.push('No se leyó el monto.');
   if (d.observaciones) a.push(d.observaciones);
   return a;
 }
@@ -341,9 +354,7 @@ function advertencias_(d) {
 
 function guardar_(cuerpo) {
   const c = cuerpo.campos || {};
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(c.fecha || '') || !c.concepto || !numero_(c.total)) {
-    throw new Error('Fecha, concepto y monto total son obligatorios.');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(c.fecha || '') || !numero_(c.monto)) throw new Error('Fecha y monto son obligatorios.');
   if (!CATEGORIAS[c.movimiento]) throw new Error('Indica si es ingreso o egreso.');
   if (tipos_(c.movimiento).indexOf(c.tipo) < 0) throw new Error('Elige un tipo de ' + c.movimiento.toLowerCase() + ' válido.');
   if (subtipos_(c.tipo).indexOf(c.subtipo) < 0) throw new Error('Elige un subtipo válido para ' + c.tipo + '.');
@@ -353,7 +364,7 @@ function guardar_(cuerpo) {
   if (cuerpo.datos) {
     validarArchivo_(cuerpo);
     const ext = {'application/pdf': 'pdf', 'image/png': 'png', 'image/webp': 'webp'}[cuerpo.tipo] || 'jpg';
-    const nombre = [c.fecha, c.movimiento, c.numero, c.subtipo].filter(String).join('_')
+    const nombre = [c.fecha, c.movimiento, c.subtipo].filter(String).join('_')
       .replace(/[\\/:*?"<>|]/g, '').slice(0, 120) + '.' + ext;
     const archivo = d.archivos.createFile(Utilities.newBlob(Utilities.base64Decode(cuerpo.datos), cuerpo.tipo, nombre));
     link = archivo.getUrl();
@@ -361,9 +372,7 @@ function guardar_(cuerpo) {
   }
 
   const [a, m, dia] = c.fecha.split('-').map(Number);
-  // El apóstrofo deja el N° como texto para no perder ceros a la izquierda.
-  const fila = [new Date(), new Date(a, m - 1, dia), c.movimiento, c.numero ? "'" + c.numero : '', c.concepto,
-    c.tipo, c.subtipo, c.tipo_doc || '', numero_(c.neto), numero_(c.iva), numero_(c.total), link,
+  const fila = [new Date(), new Date(a, m - 1, dia), c.movimiento, c.tipo, c.subtipo, numero_(c.monto), link,
     (cuerpo.advertencias || []).join(' | '), Utilities.getUuid(), idArchivo];
 
   const lock = LockService.getScriptLock();
@@ -415,9 +424,21 @@ function numero_(v) {
 
 /**
  * (Re)construye la pestaña Balance solo con fórmulas, para que se actualice sola con cada registro.
- * Las fórmulas se escriben en sintaxis inglesa (comas), que es lo que espera setFormula sin importar el idioma.
+ * setFormula interpreta las fórmulas según la configuración regional de la planilla: en es_CL el separador es ";" y
+ * las fórmulas en sintaxis inglesa quedan en #ERROR!. Por eso se escriben con la planilla en en_US y luego se
+ * restaura es_CL (Sheets traduce las fórmulas guardadas al cambiar de configuración).
  */
 function crearBalance_(libro) {
+  libro.setSpreadsheetLocale('en_US');
+  try {
+    escribirBalance_(libro);
+    SpreadsheetApp.flush();
+  } finally {
+    libro.setSpreadsheetLocale('es_CL');
+  }
+}
+
+function escribirBalance_(libro) {
   let h = libro.getSheetByName(HOJA_BALANCE);
   if (h) {
     h.getCharts().forEach(g => h.removeChart(g));
@@ -430,7 +451,7 @@ function crearBalance_(libro) {
 
   const R = "Registros!";
   const rango = col => R + '$' + col + '$2:$' + col;
-  const FECHA = rango('B'), MOV = rango('C'), TIPO = rango('F'), SUB = rango('G'), TOTAL = rango('K');
+  const FECHA = rango('B'), MOV = rango('C'), TIPO = rango('D'), SUB = rango('E'), TOTAL = rango('F');
   // Filtro por el año elegido en B2 ("Todos" = sin filtro).
   const ANIO = '((($B$2="Todos")+(YEAR(' + FECHA + ')=IFERROR(VALUE($B$2),0)))>0)';
   const suma = cond => '=SUMPRODUCT(' + cond + '*' + ANIO + '*' + TOTAL + ')';
@@ -509,7 +530,7 @@ function crearBalance_(libro) {
 
   // --- Rankings y punto de equilibrio (columnas G:K)
   titulo('G4', 'Ranking de ingresos');
-  encabezado(5, 7, ['Concepto', 'Monto', '% de ingresos', 'Aumento necesario para cubrir el déficit']);
+  encabezado(5, 7, ['Subtipo', 'Monto', '% de ingresos', 'Aumento necesario para cubrir el déficit']);
   h.getRange('G6').setFormula('=IFERROR(SORT(FILTER({B' + di.desde + ':B' + di.hasta + ',C' + di.desde + ':C' + di.hasta +
     '},C' + di.desde + ':C' + di.hasta + '>0),2,FALSE),"")');
   h.getRange('I6').setFormula('=ARRAYFORMULA(IF(H6:H21="","",H6:H21/$B$5))');
@@ -518,7 +539,7 @@ function crearBalance_(libro) {
   h.getRange('I6:J21').setNumberFormat('0.0%');
 
   titulo('G23', 'Ranking de egresos y punto de equilibrio');
-  encabezado(24, 7, ['Concepto', 'Monto', '% de egresos', 'Reducirlo cubre (% del déficit)', '% acumulado del déficit']);
+  encabezado(24, 7, ['Subtipo', 'Monto', '% de egresos', 'Reducirlo cubre (% del déficit)', '% acumulado del déficit']);
   h.getRange('G25').setFormula('=IFERROR(SORT(FILTER({B' + de.desde + ':B' + de.hasta + ',C' + de.desde + ':C' + de.hasta +
     '},C' + de.desde + ':C' + de.hasta + '>0),2,FALSE),"")');
   h.getRange('I25').setFormula('=ARRAYFORMULA(IF(H25:H46="","",H25:H46/$B$6))');
