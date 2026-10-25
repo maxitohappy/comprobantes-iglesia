@@ -283,7 +283,7 @@ const ESQUEMA = {
   properties: {
     es_comprobante: {type: 'boolean'},
     movimiento: {type: 'string', enum: ['Ingreso', 'Egreso', ''],
-      description: 'Según el título del documento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" → Egreso.'},
+      description: 'Según el título del documento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" (o "engreso") → Egreso.'},
     fecha: {type: 'string', description: 'Fecha del comprobante en formato AAAA-MM-DD, o vacío si no se ve.'},
     concepto: {type: 'string', description: 'Glosa o concepto del comprobante, tal como aparece escrito.'},
     tipo: {type: 'string', enum: todosLosTipos_().concat([''])},
@@ -297,6 +297,8 @@ const ESQUEMA = {
 
 const INSTRUCCIONES = 'Extrae los datos de este comprobante de ingreso o egreso de la tesorería de una iglesia evangélica chilena. ' +
   'El título del documento indica si es "Comprobante de ingreso" o "Comprobante de egreso". ' +
+  // Regla de negocio: el formulario impreso de la iglesia trae el error de imprenta "engreso".
+  'Algunos formularios impresos dicen "Comprobante de engreso" por un error de imprenta: eso es un comprobante de Egreso. ' +
   'Los montos están en pesos chilenos: el punto separa miles, así que "$12.990" es 12990. ' +
   'Entrega el monto total como número entero sin símbolos. ' +
   'Clasifica el tipo y subtipo según la glosa o concepto, usando este catálogo:\n' + catalogoTexto_() + '\n' +

@@ -17,6 +17,13 @@ La pestaña **Balance** se calcula sola con fórmulas: ingresos, egresos, saldo,
 
 **Sitio:** https://maxitohappy.github.io/comprobantes-iglesia/
 
+## Reglas de negocio
+
+- El título del comprobante define el movimiento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" → Egreso.
+- Algunos formularios impresos dicen **"Comprobante de engreso"** por un error de imprenta: se registran como **Egreso**.
+- Tipo y subtipo se asignan solo si la glosa lo indica claramente; si no, el usuario los elige antes de guardar.
+- La planilla se ordena por la fecha del comprobante, no por la fecha en que se subió.
+
 ## Catálogo
 
 | Tipo | Subtipos |
