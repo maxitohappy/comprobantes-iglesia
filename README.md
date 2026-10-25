@@ -12,7 +12,7 @@ Aplicación web para la tesorería de la iglesia:
    fecha del comprobante) y una copia del archivo en la carpeta **Tesorería IPUNJ - Comprobantes/Archivos** de Google Drive.
 5. En "Últimos comprobantes guardados" puedes eliminar un comprobante: se borra de la planilla y el archivo va a la papelera.
 
-La pestaña **Balance** se calcula sola con fórmulas: ingresos, egresos, saldo, superávit/déficit, saldo por fondo
+La pestaña **Balance** se calcula sola con fórmulas y se filtra por período (selectores de año y mes): ingresos, egresos, saldo, superávit/déficit, saldo por fondo
 (N°1 locales, N°2 pastor, N°3 nacionales), conceptos con mayor peso, punto de equilibrio y movimiento mensual con gráficos.
 
 **Sitio:** https://maxitohappy.github.io/comprobantes-iglesia/
@@ -26,6 +26,8 @@ La pestaña **Balance** se calcula sola con fórmulas: ingresos, egresos, saldo,
   varias, gana la más larga ("diezmo de diezmo" gana a "diezmo"). La lista está en `PALABRAS_CLAVE` de `backend/Code.gs`.
 - Si no hay palabra clave, Claude propone tipo y subtipo solo si la glosa es clara; si no, el usuario los elige antes de guardar.
 - La planilla se ordena por la fecha del comprobante, no por la fecha en que se subió.
+- Los comprobantes son manuscritos: la letra no se anota como observación (solo dudas reales de fecha o monto).
+- Un año escrito con dos dígitos es del 2000: "26" = 2026.
 
 ## Catálogo
 

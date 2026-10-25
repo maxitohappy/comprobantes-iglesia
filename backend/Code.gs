@@ -25,7 +25,7 @@ const C = {registro: 0, fecha: 1, movimiento: 2, nombre: 3, tipo: 4, subtipo: 5,
 // Letra de columna en la planilla para una posición de C (A = 0).
 const letra_ = i => String.fromCharCode(65 + i);
 // Sube este número cuando cambien las columnas o la pestaña Balance: la planilla se migra sola en la siguiente llamada.
-const VERSION_PLANILLA = '3';
+const VERSION_PLANILLA = '4';
 // Encabezados antiguos que cambiaron de nombre (para migrar datos ya guardados).
 const RENOMBRES = {'Total': 'Monto', 'Advertencias': 'Notas'};
 const MODELO_POR_DEFECTO = 'claude-haiku-5-5';
@@ -127,6 +127,8 @@ function doGet(e) {
       case 'inicio': return json_({ok: true, datos: {estado: estado_(), ultimas: ultimas_(10)}});
       case 'ping': return json_({ok: true, datos: estado_()});
       case 'ultimas': return json_({ok: true, datos: ultimas_(10)});
+      // Control de que las fórmulas del Balance calculan: resumen tal como se ve en la planilla.
+      case 'balance': return json_({ok: true, datos: destino_().libro.getSheetByName(HOJA_BALANCE).getRange('A2:D10').getDisplayValues()});
       default: return json_({ok: false, error: 'acción desconocida: ' + p.accion});
     }
   } catch (err) {
@@ -337,14 +339,16 @@ const ESQUEMA = {
     es_comprobante: {type: 'boolean'},
     movimiento: {type: 'string', enum: ['Ingreso', 'Egreso', ''],
       description: 'Según el título del documento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" (o "engreso") → Egreso.'},
-    fecha: {type: 'string', description: 'Fecha del comprobante en formato AAAA-MM-DD, o vacío si no se ve.'},
+    fecha: {type: 'string', description: 'Fecha del comprobante (casillas Día, Mes, Año) en formato AAAA-MM-DD, o vacío. ' +
+      'Un año de dos dígitos es del 2000: "26" = 2026.'},
     nombre: {type: 'string', description: 'Lo escrito en el campo "Nombre" del comprobante (persona o institución), o vacío.'},
     concepto: {type: 'string', description: 'Glosa o concepto del comprobante, tal como aparece escrito (todas sus líneas).'},
     tipo: {type: 'string', enum: todosLosTipos_().concat([''])},
     subtipo: {type: 'string', enum: todosLosSubtipos_().concat([''])},
     monto: {type: ['number', 'null']},
-    observaciones: {type: 'string', description: 'Solo dudas de lectura (texto borroso, cifras dudosas), o vacío. ' +
-      'No comentes la clasificación ni el título "engreso": eso lo resuelven reglas aparte.'},
+    observaciones: {type: 'string', description: 'Vacío, salvo que el monto o la fecha sean realmente ambiguos. ' +
+      'Todos los comprobantes son manuscritos: no comentes la letra ni la legibilidad de la glosa o el nombre. ' +
+      'Tampoco comentes la clasificación ni el título "engreso": eso lo resuelven reglas aparte.'},
   },
   required: ['es_comprobante', 'movimiento', 'fecha', 'nombre', 'concepto', 'tipo', 'subtipo', 'monto', 'observaciones'],
   additionalProperties: false,
@@ -566,9 +570,10 @@ function escribirBalance_(libro) {
   const rango = col => R + '$' + col + '$2:$' + col;
   const FECHA = rango(letra_(C.fecha)), MOV = rango(letra_(C.movimiento)), TIPO = rango(letra_(C.tipo)),
     SUB = rango(letra_(C.subtipo)), TOTAL = rango(letra_(C.monto));
-  // Filtro por el año elegido en B2 ("Todos" = sin filtro).
+  // Filtro por el período elegido: año en B2 y mes en D2 ("Todos" = sin filtro). Los meses están en Y2:Y13.
   const ANIO = '((($B$2="Todos")+(YEAR(' + FECHA + ')=IFERROR(VALUE($B$2),0)))>0)';
-  const suma = cond => '=SUMPRODUCT(' + cond + '*' + ANIO + '*' + TOTAL + ')';
+  const MES = '((($D$2="Todos")+(MONTH(' + FECHA + ')=IFERROR(MATCH($D$2,$Y$2:$Y$13,0),0)))>0)';
+  const suma = cond => '=SUMPRODUCT(' + cond + '*' + ANIO + '*' + MES + '*' + TOTAL + ')';
 
   const titulo = (celda, texto) => h.getRange(celda).setValue(texto).setFontWeight('bold').setFontSize(12).setFontColor('#1d4f91');
   const encabezado = (fila, col, textos) => h.getRange(fila, col, 1, textos.length).setValues([textos])
@@ -577,13 +582,19 @@ function escribirBalance_(libro) {
 
   h.getRange('A1').setValue('Balance de Tesorería — Iglesia Pentecostal Unida del Nombre de Jesús')
     .setFontWeight('bold').setFontSize(15).setFontColor('#1d4f91');
-  h.getRange('A2').setValue('Año (elige "Todos" o un año):').setFontWeight('bold');
+  h.getRange('A2').setValue('Período — Año:').setFontWeight('bold').setHorizontalAlignment('right');
   h.getRange('B2').setValue('Todos').setBackground('#fff4cc').setFontWeight('bold');
-  // Lista de años disponible en la columna Z (oculta) para el selector.
+  h.getRange('C2').setValue('Mes:').setFontWeight('bold').setHorizontalAlignment('right');
+  h.getRange('D2').setValue('Todos').setBackground('#fff4cc').setFontWeight('bold');
+  // Listas para los selectores en columnas ocultas: meses en Y, años con registros en Z.
+  const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre',
+    'Noviembre', 'Diciembre'];
+  h.getRange(1, 25, 13, 1).setValues([['Todos']].concat(MESES.map(m => [m])));
   h.getRange('Z1').setValue('Todos');
   h.getRange('Z2').setFormula('=IFERROR(SORT(UNIQUE(FILTER(YEAR(' + FECHA + '),' + FECHA + '<>"")),1,FALSE),"")');
   h.getRange('B2').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(h.getRange('Z1:Z50'), true).build());
-  h.hideColumns(26);
+  h.getRange('D2').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(h.getRange('Y1:Y13'), true).build());
+  h.hideColumns(25, 2);
 
   // --- Resumen (A4:C12)
   titulo('A4', 'Resumen');
