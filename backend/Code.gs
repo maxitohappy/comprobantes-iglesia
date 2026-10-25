@@ -18,12 +18,14 @@ const NOMBRE_CARPETA = 'Tesorería IPUNJ - Comprobantes';
 const NOMBRE_PLANILLA = 'Comprobantes';
 const HOJA_REGISTROS = 'Registros';
 const HOJA_BALANCE = 'Balance';
-const COLUMNAS = ['Fecha registro', 'Fecha comprobante', 'Movimiento', 'Tipo', 'Subtipo', 'Monto', 'Link archivo', 'Notas',
-  'ID', 'ID archivo'];
+const COLUMNAS = ['Fecha registro', 'Fecha comprobante', 'Movimiento', 'Nombre', 'Tipo', 'Subtipo', 'Monto', 'Link archivo',
+  'Notas', 'ID', 'ID archivo'];
 // Posiciones (base 0) de las columnas que se usan en el código.
-const C = {registro: 0, fecha: 1, movimiento: 2, tipo: 3, subtipo: 4, monto: 5, link: 6, notas: 7, id: 8, idArchivo: 9};
+const C = {registro: 0, fecha: 1, movimiento: 2, nombre: 3, tipo: 4, subtipo: 5, monto: 6, link: 7, notas: 8, id: 9, idArchivo: 10};
+// Letra de columna en la planilla para una posición de C (A = 0).
+const letra_ = i => String.fromCharCode(65 + i);
 // Sube este número cuando cambien las columnas o la pestaña Balance: la planilla se migra sola en la siguiente llamada.
-const VERSION_PLANILLA = '2';
+const VERSION_PLANILLA = '3';
 // Encabezados antiguos que cambiaron de nombre (para migrar datos ya guardados).
 const RENOMBRES = {'Total': 'Monto', 'Advertencias': 'Notas'};
 const MODELO_POR_DEFECTO = 'claude-haiku-5-5';
@@ -46,6 +48,57 @@ const CATEGORIAS = {
       'AFP y Fonasa', 'Otras Donaciones'],
     'Egreso N°3 - Dineros Nacionales': ['Ofrenda Misionera', 'Ofrenda Gavillas para Cristo', 'Ofrenda Rayos de Luz',
       'Ofrenda Semestral', 'Obra Social Nacional', 'Otros Envíos'],
+  },
+};
+
+/**
+ * Regla de negocio de palabras clave: si la glosa contiene alguna de estas palabras (sin importar mayúsculas, tildes
+ * ni plural), el comprobante se clasifica en ese subtipo, por sobre lo que proponga Claude. Si coinciden varias, gana
+ * la palabra clave más larga (así "diezmo de diezmo" gana a "diezmo" y "obra social nacional" a "obra social").
+ * Se escriben en minúsculas y sin tildes; se comparan como inicio de palabra ("misioner" sirve para misionera/o).
+ */
+const PALABRAS_CLAVE = {
+  Ingreso: {
+    'Ofrendas Culto': ['ofrenda culto', 'ofrendas culto', 'ofrenda de culto', 'culto'],
+    'Obra Social': ['obra social'],
+    'Actividad Pro-Templo': ['actividad'],
+    'Votos Pro-Templo': ['voto pro templo', 'votos pro templo', 'voto protemplo', 'votos protemplo'],
+    'Votos Familia Pastoral': ['familia pastoral'],
+    'Otros Votos': ['voto'],
+    'Donaciones': ['donacion'],
+    'Saldo Anterior': ['saldo anterior'],
+    'Préstamo': ['prestamo'],
+    'Diezmos': ['diezmo'],
+    'Primicias': ['primicia'],
+    'Ofrenda Misionera': ['misioner'],
+    'Ofrenda Gavillas para Cristo': ['gavilla'],
+    'Ofrenda Rayos de Luz': ['rayos de luz', 'rayo de luz'],
+    'Ofrenda Semestral': ['semestral'],
+    'Obra Social Nacional': ['obra social nacional'],
+  },
+  Egreso: {
+    'Arriendo': ['arriendo'],
+    'Servicios': ['servicio', 'cuenta de luz', 'cuenta de agua', 'cuenta de gas', 'electricidad', 'internet'],
+    'E. Dominical - Oficina': ['dominical', 'oficina'],
+    'Insumos Aseo': ['aseo', 'limpieza'],
+    'Viáticos': ['viatico'],
+    'Inversión Actividad Pro-Templo': ['actividad'],
+    'Obra Social Local': ['obra social'],
+    'Construcción': ['construccion'],
+    'Pago Préstamo': ['prestamo'],
+    'Entrega Diezmo a Pastor': ['diezmo'],
+    'Adelanto Pastor': ['adelanto'],
+    'Diezmo de Diezmo': ['diezmo de diezmo'],
+    'FOSP': ['fosp'],
+    'Primicias': ['primicia'],
+    'AFP y Fonasa': ['afp', 'fonasa', 'imposicion'],
+    'Otras Donaciones': ['donacion'],
+    'Ofrenda Misionera': ['misioner'],
+    'Ofrenda Gavillas para Cristo': ['gavilla'],
+    'Ofrenda Rayos de Luz': ['rayos de luz', 'rayo de luz'],
+    'Ofrenda Semestral': ['semestral'],
+    'Obra Social Nacional': ['obra social nacional'],
+    'Otros Envíos': ['envio'],
   },
 };
 
@@ -150,7 +203,7 @@ function migrarRegistros_(hoja) {
   hoja.setFrozenRows(1);
   hoja.getRange('A2:A').setNumberFormat('dd-mm-yyyy hh:mm');
   hoja.getRange('B2:B').setNumberFormat('dd-mm-yyyy');
-  hoja.getRange('F2:F').setNumberFormat('$#,##0');
+  hoja.getRange(letra_(C.monto) + '2:' + letra_(C.monto)).setNumberFormat('$#,##0');
   if (filas.length) hoja.getRange(2, 1, filas.length, COLUMNAS.length).setValues(filas);
   hoja.hideColumns(C.id + 1, 2);
 }
@@ -211,7 +264,7 @@ function ultimas_(n) {
   return filas.map(f => ({
     id: f[C.id],
     fecha: f[C.fecha] instanceof Date ? Utilities.formatDate(f[C.fecha], 'America/Santiago', 'dd-MM-yyyy') : String(f[C.fecha]),
-    movimiento: f[C.movimiento], tipo: f[C.tipo], subtipo: f[C.subtipo], monto: f[C.monto], link: f[C.link],
+    movimiento: f[C.movimiento], nombre: f[C.nombre], tipo: f[C.tipo], subtipo: f[C.subtipo], monto: f[C.monto], link: f[C.link],
   }));
 }
 
@@ -285,13 +338,15 @@ const ESQUEMA = {
     movimiento: {type: 'string', enum: ['Ingreso', 'Egreso', ''],
       description: 'Según el título del documento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" (o "engreso") → Egreso.'},
     fecha: {type: 'string', description: 'Fecha del comprobante en formato AAAA-MM-DD, o vacío si no se ve.'},
-    concepto: {type: 'string', description: 'Glosa o concepto del comprobante, tal como aparece escrito.'},
+    nombre: {type: 'string', description: 'Lo escrito en el campo "Nombre" del comprobante (persona o institución), o vacío.'},
+    concepto: {type: 'string', description: 'Glosa o concepto del comprobante, tal como aparece escrito (todas sus líneas).'},
     tipo: {type: 'string', enum: todosLosTipos_().concat([''])},
     subtipo: {type: 'string', enum: todosLosSubtipos_().concat([''])},
     monto: {type: ['number', 'null']},
-    observaciones: {type: 'string', description: 'Dudas de lectura (texto borroso, cifras dudosas), o vacío.'},
+    observaciones: {type: 'string', description: 'Solo dudas de lectura (texto borroso, cifras dudosas), o vacío. ' +
+      'No comentes la clasificación ni el título "engreso": eso lo resuelven reglas aparte.'},
   },
-  required: ['es_comprobante', 'movimiento', 'fecha', 'concepto', 'tipo', 'subtipo', 'monto', 'observaciones'],
+  required: ['es_comprobante', 'movimiento', 'fecha', 'nombre', 'concepto', 'tipo', 'subtipo', 'monto', 'observaciones'],
   additionalProperties: false,
 };
 
@@ -303,8 +358,9 @@ const INSTRUCCIONES = 'Extrae los datos de este comprobante de ingreso o egreso 
   'Entrega el monto total como número entero sin símbolos. ' +
   'Clasifica el tipo y subtipo según la glosa o concepto, usando este catálogo:\n' + catalogoTexto_() + '\n' +
   'El tipo debe ser del mismo movimiento (Ingreso N° para ingresos, Egreso N° para egresos) y el subtipo debe pertenecer a ese tipo. ' +
-  'Asigna tipo y subtipo SOLO si la glosa lo indica de forma clara (por ejemplo "diezmos", "pago de arriendo"); ' +
-  'si la glosa no lo especifica o hay duda, deja tipo y subtipo vacíos para que el tesorero lo indique. ' +
+  'Si la glosa contiene una palabra del nombre de un subtipo, clasifícalo en ese subtipo aunque el sentido no calce ' +
+  'exactamente (por ejemplo, "entrega plata préstamo" en un egreso es Pago Préstamo). ' +
+  'Si la glosa no menciona ningún subtipo y no es clara, deja tipo y subtipo vacíos para que el tesorero lo indique. ' +
   'Si un dato no se ve, deja el texto vacío o null; no lo inventes. ' +
   'Si la imagen no es un comprobante, boleta ni factura, marca es_comprobante en false.';
 
@@ -348,6 +404,11 @@ function extraer_(cuerpo) {
 
 /** Descarta una clasificación incoherente con el catálogo para que el usuario la elija a mano. */
 function ajustarClasificacion_(d) {
+  const porClave = clasificarPorPalabraClave_(d.movimiento, d.concepto);
+  if (porClave) {
+    d.tipo = porClave.tipo;
+    d.subtipo = porClave.subtipo;
+  }
   if (d.tipo && tipos_(d.movimiento).indexOf(d.tipo) < 0) d.tipo = '';
   if (!d.tipo && d.subtipo) {
     // Si el subtipo solo existe en un tipo de ese movimiento, se deduce el tipo.
@@ -355,6 +416,33 @@ function ajustarClasificacion_(d) {
     if (posibles.length === 1) d.tipo = posibles[0];
   }
   if (d.subtipo && subtipos_(d.tipo).indexOf(d.subtipo) < 0) d.subtipo = '';
+}
+
+function normalizar_(texto) {
+  return ' ' + String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+}
+
+/** Aplica PALABRAS_CLAVE a la glosa. Devuelve {tipo, subtipo, palabra} o null si no hay una coincidencia única. */
+function clasificarPorPalabraClave_(movimiento, glosa) {
+  const claves = PALABRAS_CLAVE[movimiento];
+  if (!claves || !glosa) return null;
+  const texto = normalizar_(glosa);
+  let mejor = null, empate = false;
+  for (const subtipo in claves) {
+    for (const palabra of claves[subtipo]) {
+      if (texto.indexOf(' ' + palabra) < 0) continue;
+      if (!mejor || palabra.length > mejor.palabra.length) {
+        mejor = {subtipo: subtipo, palabra: palabra};
+        empate = false;
+      } else if (palabra.length === mejor.palabra.length && subtipo !== mejor.subtipo) {
+        empate = true;
+      }
+    }
+  }
+  if (!mejor || empate) return null;
+  const tipo = tipos_(movimiento).filter(t => subtipos_(t).indexOf(mejor.subtipo) >= 0)[0];
+  return tipo ? {tipo: tipo, subtipo: mejor.subtipo, palabra: mejor.palabra} : null;
 }
 
 function validarArchivo_(cuerpo) {
@@ -389,7 +477,7 @@ function guardar_(cuerpo) {
   if (cuerpo.datos) {
     validarArchivo_(cuerpo);
     const ext = {'application/pdf': 'pdf', 'image/png': 'png', 'image/webp': 'webp'}[cuerpo.tipo] || 'jpg';
-    const nombre = [c.fecha, c.movimiento, c.subtipo].filter(String).join('_')
+    const nombre = [c.fecha, c.movimiento, c.subtipo, c.nombre].filter(String).join('_')
       .replace(/[\\/:*?"<>|]/g, '').slice(0, 120) + '.' + ext;
     const archivo = d.archivos.createFile(Utilities.newBlob(Utilities.base64Decode(cuerpo.datos), cuerpo.tipo, nombre));
     link = archivo.getUrl();
@@ -397,7 +485,7 @@ function guardar_(cuerpo) {
   }
 
   const [a, m, dia] = c.fecha.split('-').map(Number);
-  const fila = [new Date(), new Date(a, m - 1, dia), c.movimiento, c.tipo, c.subtipo, numero_(c.monto), link,
+  const fila = [new Date(), new Date(a, m - 1, dia), c.movimiento, c.nombre || '', c.tipo, c.subtipo, numero_(c.monto), link,
     (cuerpo.advertencias || []).join(' | '), Utilities.getUuid(), idArchivo];
 
   const lock = LockService.getScriptLock();
@@ -476,7 +564,8 @@ function escribirBalance_(libro) {
 
   const R = "Registros!";
   const rango = col => R + '$' + col + '$2:$' + col;
-  const FECHA = rango('B'), MOV = rango('C'), TIPO = rango('D'), SUB = rango('E'), TOTAL = rango('F');
+  const FECHA = rango(letra_(C.fecha)), MOV = rango(letra_(C.movimiento)), TIPO = rango(letra_(C.tipo)),
+    SUB = rango(letra_(C.subtipo)), TOTAL = rango(letra_(C.monto));
   // Filtro por el año elegido en B2 ("Todos" = sin filtro).
   const ANIO = '((($B$2="Todos")+(YEAR(' + FECHA + ')=IFERROR(VALUE($B$2),0)))>0)';
   const suma = cond => '=SUMPRODUCT(' + cond + '*' + ANIO + '*' + TOTAL + ')';

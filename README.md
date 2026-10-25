@@ -7,7 +7,7 @@ Aplicación web para la tesorería de la iglesia:
    y según la glosa propone el **tipo** y **subtipo** del catálogo de la iglesia.
 3. Revisas y corriges. Si la glosa no indica el tipo, los selectores quedan vacíos y debes elegirlos antes de guardar
    (la glosa leída se muestra como ayuda, pero no se guarda).
-4. Al guardar, se agrega una fila (Fecha registro, Fecha comprobante, Movimiento, Tipo, Subtipo, Monto, Link archivo,
+4. Al guardar, se agrega una fila (Fecha registro, Fecha comprobante, Movimiento, Nombre, Tipo, Subtipo, Monto, Link archivo,
    Notas) a la pestaña **Registros** de la planilla **Comprobantes** (ordenada siempre por la
    fecha del comprobante) y una copia del archivo en la carpeta **Tesorería IPUNJ - Comprobantes/Archivos** de Google Drive.
 5. En "Últimos comprobantes guardados" puedes eliminar un comprobante: se borra de la planilla y el archivo va a la papelera.
@@ -21,7 +21,10 @@ La pestaña **Balance** se calcula sola con fórmulas: ingresos, egresos, saldo,
 
 - El título del comprobante define el movimiento: "Comprobante de ingreso" → Ingreso; "Comprobante de egreso" → Egreso.
 - Algunos formularios impresos dicen **"Comprobante de engreso"** por un error de imprenta: se registran como **Egreso**.
-- Tipo y subtipo se asignan solo si la glosa lo indica claramente; si no, el usuario los elige antes de guardar.
+- **Palabras clave:** si la glosa contiene una palabra clave de un subtipo (sin importar mayúsculas, tildes ni plural),
+  se clasifica en ese subtipo. Ejemplo: en un egreso, "Entrega plata préstamo" → Egreso N°1 · Pago Préstamo. Si coinciden
+  varias, gana la más larga ("diezmo de diezmo" gana a "diezmo"). La lista está en `PALABRAS_CLAVE` de `backend/Code.gs`.
+- Si no hay palabra clave, Claude propone tipo y subtipo solo si la glosa es clara; si no, el usuario los elige antes de guardar.
 - La planilla se ordena por la fecha del comprobante, no por la fecha en que se subió.
 
 ## Catálogo

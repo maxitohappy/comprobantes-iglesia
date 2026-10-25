@@ -123,6 +123,7 @@ function llenarFormulario(d) {
   actualizarTipos(d.tipo);
   actualizarSubtipos(d.subtipo);
   f.fecha.value = /^\d{4}-\d{2}-\d{2}$/.test(d.fecha) ? d.fecha : '';
+  f.nombre.value = d.nombre || '';
   f.monto.value = d.monto ?? '';
   // La glosa no se guarda; se muestra como ayuda para elegir el tipo y subtipo.
   $('glosa').innerHTML = d.concepto ? `<b>Glosa leída:</b> ${escapar(d.concepto)}` : '';
@@ -183,11 +184,12 @@ function pintarUltimas(filas) {
   $('ultimas').innerHTML = ultimas.length ? ultimas.map(b => `<tr>
       <td>${escapar(b.fecha)}</td>
       <td><span class="mov ${b.movimiento === 'Ingreso' ? 'ingreso' : 'egreso'}">${escapar(b.movimiento)}</span></td>
+      <td class="texto" title="${escapar(b.nombre)}">${escapar(b.nombre)}</td>
       <td class="texto" title="${escapar(b.tipo)}">${escapar(b.tipo)}</td><td>${escapar(b.subtipo)}</td>
       <td class="num">${pesos(b.monto)}</td>
       <td>${b.link ? `<a href="${escapar(b.link)}" target="_blank" rel="noopener">Ver</a>` : ''}</td>
       <td><button class="eliminar" data-id="${escapar(b.id)}" title="Eliminar comprobante" aria-label="Eliminar comprobante">🗑</button></td></tr>`).join('')
-    : '<tr><td colspan="7" class="vacio">Sin datos aún</td></tr>';
+    : '<tr><td colspan="8" class="vacio">Sin datos aún</td></tr>';
 }
 
 async function cargarUltimas() {
